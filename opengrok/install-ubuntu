@@ -1,9 +1,17 @@
 #!/bin/bash
 
+if [ -z "$ROOM11_INSTALL_HOST_NAME" ]; then
+  >&2 echo "The ROOM11_INSTALL_HOST_NAME variable must be defined before installation can proceed"
+  exit 1
+fi
+
+set -e
+
 #####################
 #    C O N F I G    #
 #####################
 
+ROOM11_INSTALL_FRONT_END_HOST_NAME=${ROOM11_INSTALL_FRONT_END_HOST_NAME:-/opt}
 ROOM11_INSTALL_BASE=${ROOM11_INSTALL_BASE:-/opt}
 ROOM11_OPENGROK_DATA=${ROOM11_OPENGROK_DATA:-/var/opengrok}
 ROOM11_SOURCE_BASE=${ROOM11_SOURCE_BASE:-/srv/sources}
@@ -18,6 +26,12 @@ ROOM11_DOCKER_NETWORK_NAME=${ROOM11_DOCKER_NETWORK_NAME:-opengrok}
 ROOM11_DOCKER_NETWORK_SUBNET=${ROOM11_DOCKER_NETWORK_SUBNET:-192.168.11.0/24}
 ROOM11_DOCKER_NETWORK_GATEWAY=${ROOM11_DOCKER_NETWORK_GATEWAY:-192.168.11.254}
 ROOM11_DOCKER_NETWORK_OPENGROK_IP=${ROOM11_DOCKER_NETWORK_OPENGROK_IP:-192.168.11.11}
+
+ROOM11_NGINX_WEB_ROOT=${ROOM11_NGINX_WEB_ROOT:-/srv/www}
+
+if [ -z "$ROOM11_INSTALL_FRONT_END_HOST_NAME" ]; then
+  ROOM11_INSTALL_FRONT_END_HOST_NAME=$ROOM11_INSTALL_HOST_NAME
+fi
 
 if [ -z "$ROOM11_TOMCAT_BASE" ]; then
   ROOM11_TOMCAT_BASE="$ROOM11_INSTALL_BASE/tomcat"
@@ -45,39 +59,76 @@ apt-get -y install docker-engine
 docker pull $ROOM11_DOCKER_IMAGE
 
 # Create a user and group for tomcat
-groupadd tomcat -g $ROOM11_TOMCAT_GID
-useradd -s /bin/false -u $ROOM11_TOMCAT_UID -g tomcat -d "$ROOM11_OPENGROK_DATA" tomcat
+# The tomcat user also needs to be in the docker group to access the docker daemon socket
+groupadd tomcat
+useradd -s /bin/false -g tomcat -G docker -d "$ROOM11_OPENGROK_DATA" tomcat
 
 # Create the docker bridge network
 docker network create --subnet $ROOM11_DOCKER_NETWORK_SUBNET --gateway $ROOM11_DOCKER_NETWORK_GATEWAY $ROOM11_DOCKER_NETWORK_NAME
 
 # Create our install dir
-$install_base=$ROOM11_INSTALL_BASE/room11-opengrok
-$install_bin=$install_base/bin
+install_base=$ROOM11_INSTALL_BASE/room11-opengrok
+install_bin=$install_base/bin
 mkdir -p $install_bin
 
 # Create opengrok executables
 installer_base=$(dirname $0)
-sed s#{CONTAINER_NAME}#opengrok_server#g                   \
-  s#{MACHINE_IP}#$ROOM11_DOCKER_NETWORK_OPENGROK_IP#g      \
-  s#{NETWORK_NAME}#$ROOM11_DOCKER_NETWORK_NAME#g           \
-  s#{TOMCAT_UID}#$ROOM11_TOMCAT_UID#g                      \
-  s#{SOURCE_BASE}#$ROOM11_SOURCE_BASE#g                    \
-  s#{OPENGROK_DATA}#$ROOM11_OPENGROK_DATA#g                \
-  s#{DOCKER_IMAGE}#$ROOM11_DOCKER_IMAGE#g                  \
-  s#{TOMCAT_BASE}#$ROOM11_TOMCAT_BASE#g                    \
+sed 
+  -e s#{MACHINE_IP}#$ROOM11_DOCKER_NETWORK_OPENGROK_IP#g      \
+  -e s#{NETWORK_NAME}#$ROOM11_DOCKER_NETWORK_NAME#g           \
+  -e s#{SOURCE_BASE}#$ROOM11_SOURCE_BASE#g                    \
+  -e s#{OPENGROK_DATA}#$ROOM11_OPENGROK_DATA#g                \
+  -e s#{DOCKER_IMAGE}#$ROOM11_DOCKER_IMAGE#g                  \
+  -e s#{TOMCAT_BASE}#$ROOM11_TOMCAT_BASE#g                    \
   $installer_base/bin/run-tomcat > $install_bin/run-tomcat
-sed s#{CONTAINER_NAME}#opengrok_indexer#g                  \
-  s#{TOMCAT_UID}#$ROOM11_TOMCAT_UID#g                      \
-  s#{SOURCE_BASE}#$ROOM11_SOURCE_BASE#g                    \
-  s#{OPENGROK_DATA}#$ROOM11_OPENGROK_DATA#g                \
-  s#{DOCKER_IMAGE}#$ROOM11_DOCKER_IMAGE#g                  \
-  s#{OPENGROK_BASE}#$ROOM11_OPENGROK_BASE#g                \
+sed
+  -e s#{SOURCE_BASE}#$ROOM11_SOURCE_BASE#g                    \
+  -e s#{OPENGROK_DATA}#$ROOM11_OPENGROK_DATA#g                \
+  -e s#{DOCKER_IMAGE}#$ROOM11_DOCKER_IMAGE#g                  \
+  -e s#{OPENGROK_BASE}#$ROOM11_OPENGROK_BASE#g                \
   $installer_base/bin/index-all > $install_bin/index-all
 chmod 755 $install_bin $install_bin/*
 
 # Create tomcat service
-sed s#{INSTALL_BASE}#$install_base#g $installer_base/tomcat.service.upstart > /etc/init/tomcat.conf
+sed -e s#{INSTALL_BASE}#$install_base#g $installer_base/tomcat.service.upstart > /etc/init/tomcat.conf
 chown root.root /etc/init/tomcat.conf
 chmod 644 /etc/init/tomcat.conf
 
+# Add the 'main' log format to main nginx conf file
+sed -e 's/\(\s*\)error_log.*/\0\n\1log_format main '"'"'$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" "$http_x_forwarded_for"'"'"';/' /etc/nginx/nginx.conf
+
+# Create the ssl_defaults file
+cp $installer_base/nginx.ssl_defaults /etc/nginx/ssl_defaults
+
+# Define the default http host file
+sed
+  -e s#{HOST_NAME}#$ROOM11_INSTALL_HOST_NAME#g    \
+  -e s#{WEB_ROOT}#$ROOM11_NGINX_WEB_ROOT#g        \
+  $installer_base/nginx.http.conf > /etc/nginx/sites-enabled/default
+
+# Create the web root directory
+mkdir -p $ROOM11_NGINX_WEB_ROOT/public $ROOM11_NGINX_WEB_ROOT/logs
+chown -R www-data.www-data $ROOM11_NGINX_WEB_ROOT
+
+# Reload nginx config
+service nginx reload
+
+# Install certbot-auto
+wget https://dl.eff.org/certbot-auto
+chmod a+x certbot-auto
+
+# Get a certificate
+./certbot-auto certonly --webroot -w $ROOM11_NGINX_WEB_ROOT/public -d $ROOM11_INSTALL_HOST_NAME
+
+# Add HTTPS config
+sed
+  -e s#{HOST_NAME}#$ROOM11_INSTALL_HOST_NAME#g                       \
+  -e s#{WEB_ROOT}#$ROOM11_NGINX_WEB_ROOT#g                           \
+  -e s#{FRONT_END_HOST_NAME}#$ROOM11_INSTALL_FRONT_END_HOST_NAME#g   \
+  -e s#{OPENGROK_MACHINE_IP}#$ROOM11_DOCKER_NETWORK_OPENGROK_IP#g    \
+  $installer_base/nginx.https.conf >> /etc/nginx/sites-enabled/default
+
+# Reload nginx config again
+service nginx reload
+
+# hopefully everything should now work...

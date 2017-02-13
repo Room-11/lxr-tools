@@ -7,9 +7,6 @@ ARG OPENGROK_BASE=$INSTALL_BASE/opengrok
 ARG OPENGROK_DATA=/var/opengrok
 ARG SOURCE_BASE=/srv/sources
 
-ARG TOMCAT_UID=11011001
-ARG TOMCAT_GID=11011002
-
 # Where we are getting the installers from
 ARG TOMCAT_URL=http://mirrors.ukfast.co.uk/sites/ftp.apache.org/tomcat/tomcat-8/v8.5.11/bin/apache-tomcat-8.5.11.tar.gz
 ARG OPENGROK_URL=https://github.com/OpenGrok/OpenGrok/files/757802/opengrok-0.13-rc9.tar.gz.zip
@@ -88,16 +85,3 @@ RUN mkdir source.tmp                                             && \
 
 # Deploy opengrok
 RUN OPENGROK_TOMCAT_BASE=$TOMCAT_BASE $OPENGROK_BASE/bin/OpenGrok deploy
-
-# Create a user for tomcat
-RUN groupadd tomcat -g $TOMCAT_GID                                            && \
-    useradd -s /bin/false -u $TOMCAT_UID -g tomcat -d "$TOMCAT_BASE" tomcat   && \
-    chown -R tomcat.tomcat "$TOMCAT_BASE"                                     && \
-    chmod -R g+r "$TOMCAT_BASE/conf"                                          && \
-    chmod g+x "$TOMCAT_BASE/conf"
-
-# We don't need autotools or zip/unzip any more
-RUN apt-get -y purge --auto-remove                    \
-    autotools-dev make autoconf libtool pkg-config    \
-    zip unzip                                      && \
-    apt-get -y clean
