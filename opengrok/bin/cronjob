@@ -1,0 +1,3 @@
+#!/bin/bash
+
+flock -n /tmp/opengrok-index.lock {INSTALL_BASE}/bin/update-and-index-all

@@ -94,6 +94,13 @@ sed                                                           \
   -e s#{SOURCE_BASE}#$ROOM11_SOURCE_BASE#g                    \
   -e s#{INSTALL_BASE}#$install_base#g                         \
   $installer_base/bin/update-and-index-all > $install_bin/update-and-index-all
+
+# Install indexer cronjob
+sed                                                           \
+  -e s#{INSTALL_BASE}#$install_base#g                         \
+  $installer_base/bin/cronjob > $install_bin/cronjob
+ln -s $install_bin/cronjob /etc/cron.hourly/opengrok-update-and-index-all
+
 chmod 755 $install_bin $install_bin/*
 
 # Create tomcat service
