@@ -1,0 +1,3 @@
+#!/bin/bash
+
+certbot-auto renew --quiet --post-hook "service nginx reload"

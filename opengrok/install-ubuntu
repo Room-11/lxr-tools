@@ -125,6 +125,10 @@ mv certbot-auto /usr/bin/
 # Get a certificate
 certbot-auto certonly --webroot -w $ROOM11_NGINX_WEB_ROOT/$ROOM11_INSTALL_HOST_NAME/public -d $ROOM11_INSTALL_HOST_NAME
 
+# Install auto renew cron job
+cp $installer_base/../certbot-auto-renew /etc/cron.daily/
+chmod 755 /etc/cron.daily/certbot-auto-renew
+
 # Create the ssl_defaults file
 cp $installer_base/nginx.ssl_defaults /etc/nginx/ssl_defaults
 
