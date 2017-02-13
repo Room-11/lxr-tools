@@ -1,0 +1,12 @@
+#!/bin/bash
+
+docker run                                \
+  --name '{CONTAINER_NAME}'               \
+  --network=host                          \
+  -u {TOMCAT_UID}                         \
+  -v '{SOURCE_BASE}:{SOURCE_BASE}:ro'     \
+  -v '{OPENGROK_DATA}:{OPENGROK_DATA}:rw' \
+  '{DOCKER_IMAGE}'                        \
+  {OPENGROK_BASE}/bin/OpenGrok            \
+  index                                   \
+  '{SOURCE_BASE}'

@@ -28,21 +28,24 @@ ENV ROOM11_OPENGROK_BASE $OPENGROK_BASE
 ENV ROOM11_OPENGROK_DATA $OPENGROK_DATA
 ENV ROOM11_SOURCE_BASE $SOURCE_BASE
 
-# Can't add-repository without this
-RUN apt-get update
-RUN apt-get -y install software-properties-common
-
 # Add Oracle java repo
-RUN add-apt-repository -y ppa:webupd8team/java
-RUN apt-get update
+RUN apt-get update                                  && \
+    apt-get -y install software-properties-common   && \
+    add-apt-repository -y ppa:webupd8team/java      && \
+    apt-get -y clean
 
 # Accept the Oracle license
 # http://askubuntu.com/a/190674/296695
-RUN echo debconf shared/accepted-oracle-license-v1-1 select true | debconf-set-selections
-RUN echo debconf shared/accepted-oracle-license-v1-1 seen true | debconf-set-selections
+RUN echo debconf shared/accepted-oracle-license-v1-1 select true | debconf-set-selections   && \
+    echo debconf shared/accepted-oracle-license-v1-1 seen true | debconf-set-selections
 
 # Install everything and his wife
-RUN apt-get -y install autotools-dev make autoconf libtool pkg-config git zip unzip oracle-java8-installer
+RUN apt-get update                                 && \
+    apt-get -y install                                \
+    autotools-dev make autoconf libtool pkg-config    \
+    zip unzip                                         \
+    git oracle-java8-installer                     && \
+    apt-get -y clean
 
 # Stuff that makes Java work properly - do it *after* installation to avoid confusing the installer :-(
 ENV JAVA_HOME /usr/lib/jvm/java-8-oracle/jre
@@ -61,28 +64,18 @@ RUN git clone https://github.com/universal-ctags/ctags   && \
     cd ..                                                && \
     rm -rf ctags
 
-# Clean up autotools crud
-RUN apt-get -y purge --auto-remove autotools-dev make autoconf libtool pkg-config
-
 # Install tomcat
-RUN wget -O tomcat.tar.gz "$TOMCAT_URL"
-RUN mkdir "$TOMCAT_BASE"
-RUN tar -xzvf tomcat.tar.gz -C "$TOMCAT_BASE" --strip-components=1
-RUN rm -f tomcat.tar.gz
-
-# Create a user for tomcat
-RUN groupadd tomcat -g $TOMCAT_GID
-RUN useradd -s /bin/false -u $TOMCAT_UID -g tomcat -d "$TOMCAT_BASE" tomcat
-RUN chown -R tomcat.tomcat "$TOMCAT_BASE"
-RUN chmod -R g+r "$TOMCAT_BASE/conf"
-RUN chmod g+x "$TOMCAT_BASE/conf"
+RUN wget -O tomcat.tar.gz "$TOMCAT_URL"                              && \
+    mkdir "$TOMCAT_BASE"                                             && \
+    tar -xzvf tomcat.tar.gz -C "$TOMCAT_BASE" --strip-components=1   && \
+    rm -f tomcat.tar.gz
 
 # Install opengrok
-RUN wget -O opengrok.tar.gz.zip "$OPENGROK_URL"
-RUN mkdir opengrok.tmp "$OPENGROK_BASE"
-RUN unzip -d opengrok.tmp opengrok.tar.gz.zip
-RUN tar -xzvf opengrok.tmp/*.tar.gz -C "$OPENGROK_BASE" --strip-components=1
-RUN rm -rf opengrok.tmp opengrok.tar.gz.zip
+RUN wget -O opengrok.tar.gz.zip "$OPENGROK_URL"                                && \
+    mkdir opengrok.tmp "$OPENGROK_BASE"                                        && \
+    unzip -d opengrok.tmp opengrok.tar.gz.zip                                  && \
+    tar -xzvf opengrok.tmp/*.tar.gz -C "$OPENGROK_BASE" --strip-components=1   && \
+    rm -rf opengrok.tmp opengrok.tar.gz.zip
 
 # Modify the listen address for the opengrok config update socket
 RUN mkdir source.tmp                                             && \
@@ -96,6 +89,15 @@ RUN mkdir source.tmp                                             && \
 # Deploy opengrok
 RUN OPENGROK_TOMCAT_BASE=$TOMCAT_BASE $OPENGROK_BASE/bin/OpenGrok deploy
 
-# We don't need zip/unzip any more
-RUN apt-get -y purge --auto-remove zip unzip
+# Create a user for tomcat
+RUN groupadd tomcat -g $TOMCAT_GID                                            && \
+    useradd -s /bin/false -u $TOMCAT_UID -g tomcat -d "$TOMCAT_BASE" tomcat   && \
+    chown -R tomcat.tomcat "$TOMCAT_BASE"                                     && \
+    chmod -R g+r "$TOMCAT_BASE/conf"                                          && \
+    chmod g+x "$TOMCAT_BASE/conf"
 
+# We don't need autotools or zip/unzip any more
+RUN apt-get -y purge --auto-remove                    \
+    autotools-dev make autoconf libtool pkg-config    \
+    zip unzip                                      && \
+    apt-get -y clean

@@ -1,0 +1,13 @@
+#!/bin/bash
+
+docker run                                \
+  --name '{CONTAINER_NAME}'               \
+  --ip '{MACHINE_IP}'                     \
+  --network '{NETWORK_NAME}'              \
+  -p 127.0.0.1:2424:2424                  \
+  -u {TOMCAT_UID}                         \
+  -v '{SOURCE_BASE}:{SOURCE_BASE}:ro'     \
+  -v '{OPENGROK_DATA}:{OPENGROK_DATA}:rw' \
+  '{DOCKER_IMAGE}'                        \
+  {TOMCAT_BASE}/bin/catalina.sh           \
+  run

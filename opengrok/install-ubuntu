@@ -1,0 +1,83 @@
+#!/bin/bash
+
+#####################
+#    C O N F I G    #
+#####################
+
+ROOM11_INSTALL_BASE=${ROOM11_INSTALL_BASE:-/opt}
+ROOM11_OPENGROK_DATA=${ROOM11_OPENGROK_DATA:-/var/opengrok}
+ROOM11_SOURCE_BASE=${ROOM11_SOURCE_BASE:-/srv/sources}
+
+ROOM11_TOMCAT_UID=${ROOM11_TOMCAT_UID:-11011001}
+ROOM11_TOMCAT_GID=${ROOM11_TOMCAT_GID:-11011002}
+
+ROOM11_DOCKER_IMAGE=${ROOM11_DOCKER_IMAGE:-room11/opengrok}
+ROOM11_DOCKER_KEY_URL=${ROOM11_DOCKER_KEY_URL:-https://yum.dockerproject.org/gpg}
+
+ROOM11_DOCKER_NETWORK_NAME=${ROOM11_DOCKER_NETWORK_NAME:-opengrok}
+ROOM11_DOCKER_NETWORK_SUBNET=${ROOM11_DOCKER_NETWORK_SUBNET:-192.168.11.0/24}
+ROOM11_DOCKER_NETWORK_GATEWAY=${ROOM11_DOCKER_NETWORK_GATEWAY:-192.168.11.254}
+ROOM11_DOCKER_NETWORK_OPENGROK_IP=${ROOM11_DOCKER_NETWORK_OPENGROK_IP:-192.168.11.11}
+
+if [ -z "$ROOM11_TOMCAT_BASE" ]; then
+  ROOM11_TOMCAT_BASE="$ROOM11_INSTALL_BASE/tomcat"
+fi
+
+if [ -z "$ROOM11_OPENGROK_BASE" ]; then
+  ROOM11_OPENGROK_BASE="$ROOM11_INSTALL_BASE/opengrok"
+fi
+
+#####################
+#   / C O N F I G   #
+#####################
+
+# Install some general stuff we need
+apt-get update
+apt-get -y install git curl linux-image-extra-$(uname -r) linux-image-extra-virtual apt-transport-https ca-certificates nginx
+
+# Install docker
+curl -fsSL "$ROOM11_DOCKER_KEY_URL" | sudo apt-key add -
+add-apt-repository -y "deb https://apt.dockerproject.org/repo/ ubuntu-$(lsb_release -cs) main"
+apt-get update
+apt-get -y install docker-engine
+
+# Get the docker image
+docker pull $ROOM11_DOCKER_IMAGE
+
+# Create a user and group for tomcat
+groupadd tomcat -g $ROOM11_TOMCAT_GID
+useradd -s /bin/false -u $ROOM11_TOMCAT_UID -g tomcat -d "$ROOM11_OPENGROK_DATA" tomcat
+
+# Create the docker bridge network
+docker network create --subnet $ROOM11_DOCKER_NETWORK_SUBNET --gateway $ROOM11_DOCKER_NETWORK_GATEWAY $ROOM11_DOCKER_NETWORK_NAME
+
+# Create our install dir
+$install_base=$ROOM11_INSTALL_BASE/room11-opengrok
+$install_bin=$install_base/bin
+mkdir -p $install_bin
+
+# Create opengrok executables
+installer_base=$(dirname $0)
+sed s#{CONTAINER_NAME}#opengrok_server#g                   \
+  s#{MACHINE_IP}#$ROOM11_DOCKER_NETWORK_OPENGROK_IP#g      \
+  s#{NETWORK_NAME}#$ROOM11_DOCKER_NETWORK_NAME#g           \
+  s#{TOMCAT_UID}#$ROOM11_TOMCAT_UID#g                      \
+  s#{SOURCE_BASE}#$ROOM11_SOURCE_BASE#g                    \
+  s#{OPENGROK_DATA}#$ROOM11_OPENGROK_DATA#g                \
+  s#{DOCKER_IMAGE}#$ROOM11_DOCKER_IMAGE#g                  \
+  s#{TOMCAT_BASE}#$ROOM11_TOMCAT_BASE#g                    \
+  $installer_base/bin/run-tomcat > $install_bin/run-tomcat
+sed s#{CONTAINER_NAME}#opengrok_indexer#g                  \
+  s#{TOMCAT_UID}#$ROOM11_TOMCAT_UID#g                      \
+  s#{SOURCE_BASE}#$ROOM11_SOURCE_BASE#g                    \
+  s#{OPENGROK_DATA}#$ROOM11_OPENGROK_DATA#g                \
+  s#{DOCKER_IMAGE}#$ROOM11_DOCKER_IMAGE#g                  \
+  s#{OPENGROK_BASE}#$ROOM11_OPENGROK_BASE#g                \
+  $installer_base/bin/index-all > $install_bin/index-all
+chmod 755 $install_bin $install_bin/*
+
+# Create tomcat service
+sed s#{INSTALL_BASE}#$install_base#g $installer_base/tomcat.service.upstart > /etc/init/tomcat.conf
+chown root.root /etc/init/tomcat.conf
+chmod 644 /etc/init/tomcat.conf
+
