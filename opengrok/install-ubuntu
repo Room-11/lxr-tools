@@ -83,6 +83,9 @@ sed                                                           \
   $installer_base/bin/run-tomcat > $install_bin/run-tomcat
 sed                                                           \
   -e s#{SOURCE_BASE}#$ROOM11_SOURCE_BASE#g                    \
+  $installer_base/bin/update-all > $install_bin/update-all
+sed                                                           \
+  -e s#{SOURCE_BASE}#$ROOM11_SOURCE_BASE#g                    \
   -e s#{OPENGROK_DATA}#$ROOM11_OPENGROK_DATA#g                \
   -e s#{DOCKER_IMAGE}#$ROOM11_DOCKER_IMAGE#g                  \
   -e s#{OPENGROK_BASE}#$ROOM11_OPENGROK_BASE#g                \

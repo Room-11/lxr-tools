@@ -1,0 +1,25 @@
+#!/bin/bash
+
+recurse_dir () {
+  local base_dir=${1%/}
+  local depth=${2-1}
+
+  if [ $depth -gt 3 ]; then
+    return
+  fi
+
+  for dir in $base_dir/*/
+  do
+    if [ "$dir" = "$base_dir/*/" ]; then
+      return
+    fi
+
+    if [ -d "$dir/.git" ]; then
+      git -C $dir pull
+    else
+      recurse_dir $dir $(($depth + 1))
+    fi
+  done
+}
+
+recurse_dir {SOURCE_BASE}
