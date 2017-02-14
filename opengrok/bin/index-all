@@ -1,6 +1,7 @@
 #!/bin/bash
 
 docker run                                \
+  --rm                                    \
   --network=host                          \
   -v '{SOURCE_BASE}:{SOURCE_BASE}:ro'     \
   -v '{OPENGROK_DATA}:{OPENGROK_DATA}:rw' \
