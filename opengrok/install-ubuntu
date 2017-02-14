@@ -137,7 +137,7 @@ cp $installer_base/../certbot-auto-renew /etc/cron.daily/
 chmod 755 /etc/cron.daily/certbot-auto-renew
 
 # Create the ssl_defaults file
-cp $installer_base/nginx.ssl_defaults /etc/nginx/ssl_defaults
+cp $installer_base/../nginx.ssl_defaults /etc/nginx/ssl_defaults
 
 # Add HTTPS config
 sed                                                                  \
