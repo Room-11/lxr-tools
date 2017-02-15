@@ -74,6 +74,15 @@ RUN wget -O opengrok.tar.gz.zip "$OPENGROK_URL"                                &
     tar -xzvf opengrok.tmp/*.tar.gz -C "$OPENGROK_BASE" --strip-components=1   && \
     rm -rf opengrok.tmp opengrok.tar.gz.zip
 
+# Modify the listen address for the opengrok config update socket
+RUN mkdir source.tmp                                             && \
+    cd source.tmp                                                && \
+    unzip -d . "$OPENGROK_BASE/lib/source.war" WEB-INF/web.xml   && \
+    sed -i s/localhost:2424/0.0.0.0:2424/ WEB-INF/web.xml        && \
+    zip "$OPENGROK_BASE/lib/source.war" WEB-INF/web.xml          && \
+    cd ..                                                        && \
+    rm -rf source.tmp
+
 # Deploy opengrok
-RUN WEBAPP_CONFIG_ADDRESS=0.0.0.0:2424 OPENGROK_TOMCAT_BASE=$TOMCAT_BASE $OPENGROK_BASE/bin/OpenGrok deploy && \
+RUN OPENGROK_TOMCAT_BASE=$TOMCAT_BASE $OPENGROK_BASE/bin/OpenGrok deploy && \
     mv "$TOMCAT_BASE/webapps/source.war" "$TOMCAT_BASE/webapps/ROOT.war"
