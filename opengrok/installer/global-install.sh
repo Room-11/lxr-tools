@@ -1,59 +1,16 @@
 #!/bin/bash
 
-if [ -z "$ROOM11_INSTALL_HOST_NAME" ]; then
-  >&2 echo "The ROOM11_INSTALL_HOST_NAME variable must be defined before installation can proceed"
+ROOM11_LXR_TOOLS_SERVICE_INSTALLER=$ROOM11_LXR_TOOLS_BASE_DIR/installer/service-$ROOM11_LXR_TOOLS_SERVICE_TYPE.sh
+
+if [ ! -f $ROOM11_LXR_TOOLS_SERVICE_INSTALLER ]; then
+  echo "Unknown service type target: $ROOM11_LXR_TOOLS_SERVICE_TYPE"
   exit 1
 fi
 
-set -e
-
-#####################
-#    C O N F I G    #
-#####################
-
-ROOM11_INSTALL_FRONT_END_HOST_NAME=${ROOM11_INSTALL_FRONT_END_HOST_NAME:-/opt}
-ROOM11_INSTALL_BASE=${ROOM11_INSTALL_BASE:-/opt}
-ROOM11_OPENGROK_DATA=${ROOM11_OPENGROK_DATA:-/var/opengrok}
-ROOM11_SOURCE_BASE=${ROOM11_SOURCE_BASE:-/srv/sources}
-
-ROOM11_TOMCAT_UID=${ROOM11_TOMCAT_UID:-11011001}
-ROOM11_TOMCAT_GID=${ROOM11_TOMCAT_GID:-11011002}
-
-ROOM11_DOCKER_IMAGE=${ROOM11_DOCKER_IMAGE:-room11/opengrok}
-ROOM11_DOCKER_KEY_URL=${ROOM11_DOCKER_KEY_URL:-https://yum.dockerproject.org/gpg}
-
-ROOM11_DOCKER_NETWORK_NAME=${ROOM11_DOCKER_NETWORK_NAME:-opengrok}
-ROOM11_DOCKER_NETWORK_SUBNET=${ROOM11_DOCKER_NETWORK_SUBNET:-192.168.11.0/24}
-ROOM11_DOCKER_NETWORK_GATEWAY=${ROOM11_DOCKER_NETWORK_GATEWAY:-192.168.11.254}
-ROOM11_DOCKER_NETWORK_OPENGROK_IP=${ROOM11_DOCKER_NETWORK_OPENGROK_IP:-192.168.11.11}
-
-ROOM11_NGINX_WEB_ROOT=${ROOM11_NGINX_WEB_ROOT:-/srv/www}
-
-if [ -z "$ROOM11_INSTALL_FRONT_END_HOST_NAME" ]; then
-  ROOM11_INSTALL_FRONT_END_HOST_NAME=$ROOM11_INSTALL_HOST_NAME
+if [ ! $(getent group $ROOM11_DOCKER_GROUP_NAME) ]; then
+  echo "Group $ROOM11_DOCKER_GROUP_NAME does not exist"
+  exit 1
 fi
-
-if [ -z "$ROOM11_TOMCAT_BASE" ]; then
-  ROOM11_TOMCAT_BASE="$ROOM11_INSTALL_BASE/tomcat"
-fi
-
-if [ -z "$ROOM11_OPENGROK_BASE" ]; then
-  ROOM11_OPENGROK_BASE="$ROOM11_INSTALL_BASE/opengrok"
-fi
-
-#####################
-#   / C O N F I G   #
-#####################
-
-# Install some general stuff we need
-apt-get update
-apt-get -y install git curl linux-image-extra-$(uname -r) linux-image-extra-virtual apt-transport-https ca-certificates nginx
-
-# Install docker
-curl -fsSL "$ROOM11_DOCKER_KEY_URL" | sudo apt-key add -
-add-apt-repository -y "deb https://apt.dockerproject.org/repo/ ubuntu-$(lsb_release -cs) main"
-apt-get update
-apt-get -y install docker-engine
 
 # Get the docker image
 docker pull $ROOM11_DOCKER_IMAGE
@@ -61,7 +18,7 @@ docker pull $ROOM11_DOCKER_IMAGE
 # Create a user and group for tomcat
 # The tomcat user also needs to be in the docker group to access the docker daemon socket
 groupadd tomcat
-useradd -s /bin/false -g tomcat -G docker -d "$ROOM11_OPENGROK_DATA" tomcat
+useradd -s /bin/false -g tomcat -G $ROOM11_DOCKER_GROUP_NAME -d "$ROOM11_OPENGROK_DATA" tomcat
 
 # Create the docker bridge network
 docker network create --subnet $ROOM11_DOCKER_NETWORK_SUBNET --gateway $ROOM11_DOCKER_NETWORK_GATEWAY $ROOM11_DOCKER_NETWORK_NAME
@@ -104,9 +61,7 @@ ln -s $install_bin/cronjob /etc/cron.hourly/opengrok-update-and-index-all
 chmod 755 $install_bin $install_bin/*
 
 # Create tomcat service
-sed -e s#{INSTALL_BASE}#$install_base#g $installer_base/tomcat.service.upstart > /etc/init/tomcat.conf
-chown root.root /etc/init/tomcat.conf
-chmod 644 /etc/init/tomcat.conf
+source $ROOM11_LXR_TOOLS_SERVICE_INSTALLER
 
 # Add the 'main' log format to main nginx conf file
 sed -i 's/\(\s*\)error_log.*/\0\n\1log_format main '"'"'$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" "$http_x_forwarded_for"'"'"';/' /etc/nginx/nginx.conf
@@ -115,7 +70,7 @@ sed -i 's/\(\s*\)error_log.*/\0\n\1log_format main '"'"'$remote_addr - $remote_u
 sed                                               \
   -e s#{HOST_NAME}#$ROOM11_INSTALL_HOST_NAME#g    \
   -e s#{WEB_ROOT}#$ROOM11_NGINX_WEB_ROOT#g        \
-  $installer_base/nginx.http.conf > /etc/nginx/sites-enabled/default
+  $installer_base/nginx.http.conf > $ROOM11_NGINX_CONF_DIR/$ROOM11_INSTALL_HOST_NAME.conf
 
 # Create the web root directory
 mkdir -p $ROOM11_NGINX_WEB_ROOT/$ROOM11_INSTALL_HOST_NAME/public $ROOM11_NGINX_WEB_ROOT/$ROOM11_INSTALL_HOST_NAME/logs
@@ -145,7 +100,7 @@ sed                                                                  \
   -e s#{WEB_ROOT}#$ROOM11_NGINX_WEB_ROOT#g                           \
   -e s#{FRONT_END_HOST_NAME}#$ROOM11_INSTALL_FRONT_END_HOST_NAME#g   \
   -e s#{OPENGROK_MACHINE_IP}#$ROOM11_DOCKER_NETWORK_OPENGROK_IP#g    \
-  $installer_base/nginx.https.conf >> /etc/nginx/sites-enabled/default
+  $installer_base/nginx.https.conf >> $ROOM11_NGINX_CONF_DIR/$ROOM11_INSTALL_HOST_NAME.conf
 
 # Reload nginx config again
 service nginx reload
